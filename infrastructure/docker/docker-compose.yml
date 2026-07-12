@@ -1,0 +1,35 @@
+# ── Local development environment ──────────────────────────────────────────
+# Spins up the RAG app with optional local services for offline development.
+#
+# Usage:
+#   docker compose -f infrastructure/docker/docker-compose.yml up --build
+#
+# Note: Azure AI Search and Azure OpenAI still need to be accessible from
+# the container. Set FRR_AZURE_* environment variables or use an .env file.
+
+services:
+  rag-app:
+    build:
+      context: ../../
+      dockerfile: infrastructure/docker/Dockerfile
+    container_name: financial-research-rag
+    ports:
+      - "8000:8000"
+    environment:
+      - FRR_AZURE_OPENAI_ENDPOINT=${FRR_AZURE_OPENAI_ENDPOINT:-}
+      - FRR_AZURE_SEARCH_ENDPOINT=${FRR_AZURE_SEARCH_ENDPOINT:-}
+      - FRR_AZURE_OPENAI_DEPLOYMENT_NAME=${FRR_AZURE_OPENAI_DEPLOYMENT_NAME:-gpt-4o}
+      - FRR_AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME=${FRR_AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME:-text-embedding-ada-002}
+      - FRR_AZURE_SEARCH_INDEX_NAME=${FRR_AZURE_SEARCH_INDEX_NAME:-financial-documents}
+      - FRR_APP_LOG_LEVEL=DEBUG
+    env_file:
+      - ../../.env
+    volumes:
+      # Mount source code for hot-reload during development
+      - ../../app:/app/app
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
