@@ -1,0 +1,106 @@
+# ── Kubernetes Deployment for AKS ───────────────────────────────────────────
+# Design decisions:
+#   - 2 replicas minimum for availability during rolling updates
+#   - Resource requests ensure scheduling; limits prevent memory leaks from starving other pods
+#   - Liveness probe restarts the pod if the app stops responding
+#   - Readiness probe removes the pod from service if the health check fails
+#   - Pod anti-affinity spreads replicas across nodes for fault tolerance
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: financial-research-rag
+  namespace: default
+  labels:
+    app: financial-research-rag
+    tier: backend
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: financial-research-rag
+  template:
+    metadata:
+      labels:
+        app: financial-research-rag
+        tier: backend
+    spec:
+      # Spread pods across different nodes for fault tolerance
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - financial-research-rag
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: rag-app
+          image: ${ACR_NAME}.azurecr.io/financial-research-rag:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          # ── Environment from ConfigMap + Secrets ──────────────────────
+          envFrom:
+            - configMapRef:
+                name: rag-config
+            - secretRef:
+                name: rag-secrets
+          # ── Resource limits ───────────────────────────────────────────
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+          # ── Probes ────────────────────────────────────────────────────
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+            successThreshold: 1
+            failureThreshold: 3
+          # ── Graceful shutdown ─────────────────────────────────────────
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "10"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: financial-research-rag-service
+  namespace: default
+  labels:
+    app: financial-research-rag
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app: financial-research-rag

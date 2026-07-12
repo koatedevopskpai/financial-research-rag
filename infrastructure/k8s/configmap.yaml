@@ -1,0 +1,27 @@
+# ── ConfigMap — non-sensitive configuration ─────────────────────────────────
+# Secrets (API keys, connection strings) go in a Secret, not here.
+# ConfigMap is for settings that are safe to store in version control.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-config
+  namespace: default
+data:
+  FRR_AZURE_OPENAI_API_VERSION: "2025-01-01-preview"
+  FRR_AZURE_SEARCH_API_VERSION: "2024-11-01-preview"
+  FRR_AZURE_SEARCH_INDEX_NAME: "financial-documents"
+  FRR_AZURE_OPENAI_DEPLOYMENT_NAME: "gpt-4o"
+  FRR_AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME: "text-embedding-ada-002"
+  FRR_AZURE_SEARCH_SEMANTIC_CONFIG_NAME: "financial-semantic-config"
+  FRR_CHUNK_SIZE_SMALL: "512"
+  FRR_CHUNK_SIZE_LARGE: "2048"
+  FRR_CHUNK_OVERLAP_TOKENS: "128"
+  FRR_RETRIEVAL_TOP_K: "10"
+  FRR_RETRIEVAL_TOP_K_RERANKED: "5"
+  FRR_RETRIEVAL_MIN_SCORE: "0.3"
+  FRR_RETRIEVAL_VECTOR_WEIGHT: "0.5"
+  FRR_GENERATION_TEMPERATURE: "0.1"
+  FRR_GENERATION_MAX_TOKENS: "2048"
+  FRR_APP_LOG_LEVEL: "INFO"
+  FRR_OTEL_SERVICE_NAME: "financial-research-rag"
