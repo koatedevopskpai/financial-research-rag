@@ -3,7 +3,7 @@ FastAPI application entry point for Financial Research RAG.
 
 Exposes two primary endpoints:
   POST /ingest    — Upload financial documents for chunking, embedding, and indexing
-  POST /query     — Ask questions against the indexed corpus (supports SSE streaming)
+  POST /query     — Ask questions against the indexed documents (supports SSE streaming)
 
 Architecture decision — single FastAPI app, not a microservice split:
   For the query volume of an investment research team (not internet-scale),
@@ -175,7 +175,7 @@ async def ingest_document(file: UploadFile = File(...)):
 )
 async def query_documents(request: QueryRequest):
     """
-    Ask a question against the indexed document corpus.
+    Ask a question against the indexed documents.
 
     When stream=True (default), the response is an SSE event stream:
       event: token

@@ -195,7 +195,7 @@ curl -X POST http://localhost:8000/ingest \
 
 ### `POST /query`
 
-Ask a question against the indexed corpus.
+Ask a question against the indexed documents.
 
 ```bash
 curl -X POST http://localhost:8000/query \
@@ -340,7 +340,7 @@ Run: `make test` or `pytest tests/ -v --cov=app --cov-report=term-missing`
 
 ---
 
-## Why This Project Matters for an AI Engineer Role
+## Why This Project Matters for an Azure AI Engineer Role
 
 This project demonstrates exactly what the role demands:
 

@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 class QueryRequest(BaseModel):
     """
-    A query against the indexed document corpus.
+    A query against the indexed documents.
 
     The model enforces minimum query length to prevent empty or trivial searches
     that would return meaningless results and waste API tokens.
