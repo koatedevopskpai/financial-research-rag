@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "filings": [
+    {
+      "ticker": "AAPL",
+      "cik": 320193,
+      "form": "10-K",
+      "period": "2025-09-27",
+      "filing_date": "2025-10-31",
+      "accession": "0000320193-25-000079",
+      "url": "https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/aapl-20250927.htm",
+      "sha256": "63d29bf57dcc4a938a3517f215a7ff18c6dcc1a43cfa3e874524d3e09f21235a",
+      "bytes": 1520320
+    },
+    {
+      "ticker": "MSFT",
+      "cik": 789019,
+      "form": "10-K",
+      "period": "2026-06-30",
+      "filing_date": "2026-07-29",
+      "accession": "0001193125-26-323660",
+      "url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526323660/msft-20260630.htm",
+      "sha256": "6a3e5ada11c717d0894208732249ab9366370d0a189ef80670bac5923ca28a5e",
+      "bytes": 8585613
+    }
+  ]
+}
