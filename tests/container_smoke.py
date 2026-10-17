@@ -47,7 +47,8 @@ def main() -> None:
         encoding="utf-8",
     )
     print(
-        "S1 container starts without Azure config; degraded health; query fails closed with HTTP 503."
+        "S1 container starts without Azure config; degraded health; "
+        "query fails closed with HTTP 503."
     )
 
 
