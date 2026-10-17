@@ -3,7 +3,7 @@
 This repository contains Azure AI Search / Azure OpenAI integration code, a
 FastAPI API, hierarchical chunking, citation-oriented prompt assembly and tests.
 It does not currently establish a deployed production financial research system,
-a versioned financial corpus or measured retrieval/answer quality. Do not present
+measured retrieval/answer quality. Do not present
 it as commercial banking experience or a validated financial research product.
 
 ## Supported preparation and tests (S1)
@@ -37,9 +37,9 @@ Azure connectivity. Actual Azure integration/retrieval quality remains unverifie
 
 Only UTF-8 TXT and basic HTML extraction are implemented. PDF/DOCX/XLSX fail
 explicitly; the old placeholder text path is removed. HTML is still a basic tag
-stripper, not a layout/table-aware parser. The SEC EDGAR HTML corpus/manifest is
-the planned S2 task; retrieval/answer evaluation is S5. No filing corpus or
-benchmark is claimed by S1. B01 remains deferred.
+stripper, not a layout/table-aware parser. S2 adds a [two-filing SEC EDGAR manifest](docs/S2.md), with actual downloads and
+fresh hash reproduction. Filing text remains ignored/local only. Retrieval/answer
+evaluation is S5; no benchmark or financial answer quality is established. B01 remains deferred.
 
 ## Repairs and limits
 
