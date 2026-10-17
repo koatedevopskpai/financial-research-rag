@@ -15,7 +15,7 @@ def main() -> None:
             with urlopen("http://127.0.0.1:8007/health", timeout=3) as response:
                 health = json.load(response)
             break
-        except (URLError, TimeoutError):
+        except (URLError, TimeoutError, ConnectionResetError):
             time.sleep(1)
     else:
         raise RuntimeError("container did not start")
