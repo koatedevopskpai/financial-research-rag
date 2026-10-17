@@ -83,6 +83,7 @@ class TestQueryPipeline:
                 answer="Apple reported $395.6B in revenue.",
                 sources=[],
                 total_sources_retrieved=2,
+                processing_time_ms=12,
             )
         )
 

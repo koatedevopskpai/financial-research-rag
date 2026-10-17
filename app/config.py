@@ -36,7 +36,11 @@ class Settings(BaseSettings):
     # We require separate deployment names because a single AOAI resource can host
     # multiple model deployments (gpt-4o, text-embedding-ada-002, etc.).
     azure_openai_endpoint: str = Field(
-        description="https://<your-resource>.openai.azure.com/",
+        default="",
+        description=(
+            "https://<your-resource>.openai.azure.com/ — empty means Azure OpenAI is not "
+            "configured, and the pipeline degrades to keyword-only retrieval."
+        ),
     )
     azure_openai_api_version: str = Field(
         default="2025-01-01-preview",
@@ -59,7 +63,11 @@ class Settings(BaseSettings):
 
     # ── Azure AI Search ────────────────────────────────────────────────────────
     azure_search_endpoint: str = Field(
-        description="https://<your-service>.search.windows.net",
+        default="",
+        description=(
+            "https://<your-service>.search.windows.net — empty means Azure AI Search is not "
+            "configured."
+        ),
     )
     azure_search_index_name: str = Field(
         default="financial-documents",
@@ -171,6 +179,12 @@ class Settings(BaseSettings):
     @classmethod
     def validate_url(cls, v: str) -> str:
         """Ensure endpoints are HTTPS — Azure doesn't serve over plain HTTP."""
+        if not v:
+            # An unset endpoint is allowed. The application must be importable and
+            # testable without Azure credentials, and the test suite runs fully
+            # mocked. Each service validates that its own endpoint is configured on
+            # first use, which is where a missing value can still fail loudly.
+            return v
         if not v.startswith("https://"):
             msg = f"Azure endpoint must use HTTPS: {v}"
             raise ValueError(msg)

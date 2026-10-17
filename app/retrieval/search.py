@@ -18,10 +18,8 @@ from __future__ import annotations
 
 from azure.search.documents import SearchClient
 from azure.search.documents.models import (
-    HybridSearch,
     QueryType,
-    SearchQueryVector,
-    VectorFilterMode,
+    VectorQuery,
     VectorizedQuery,
 )
 
@@ -67,7 +65,7 @@ class HybridSearchService:
         k = top_k or self.top_k
 
         # Build the vector query component
-        vector_queries: list[SearchQueryVector] = []
+        vector_queries: list[VectorQuery] = []
         if query_embedding:
             vector_queries.append(
                 VectorizedQuery(

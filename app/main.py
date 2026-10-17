@@ -153,16 +153,25 @@ async def ingest_document(file: UploadFile = File(...)):
         file_type=ext,
     )
 
-    elapsed = int((time.monotonic() - start) * 1000)
-    result.processing_time_ms = elapsed
+    elapsed_ms = result.processing_time_ms or int((time.monotonic() - start) * 1000)
 
     logger.info(
         "Document ingested",
         filename=file.filename,
-        chunks=result.total_chunks_indexed,
-        elapsed_ms=elapsed,
+        chunks=result.total_chunks,
+        elapsed_ms=elapsed_ms,
     )
-    return result
+    return IngestionResponse(
+        message=(
+            "Document indexed successfully"
+            if result.success
+            else f"Ingestion failed: {result.error_message}"
+        ),
+        results=[result],
+        total_documents=1,
+        total_chunks_indexed=result.total_chunks,
+        processing_time_ms=elapsed_ms,
+    )
 
 
 # ── Query ──────────────────────────────────────────────────────────────────────

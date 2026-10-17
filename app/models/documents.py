@@ -123,6 +123,11 @@ class IndexingResult(BaseModel):
     parent_chunks_count: int = Field(ge=0, description="Number of parent chunks indexed.")
     child_chunks_count: int = Field(ge=0, description="Number of child chunks indexed.")
     total_chunks: int = Field(ge=0, description="Total chunks (parent + child) indexed.")
+    processing_time_ms: int | None = Field(
+        default=None,
+        ge=0,
+        description="Wall-clock duration of the ingest pipeline. Set by the pipeline; None if unmeasured.",
+    )
     success: bool = Field(description="True if all chunks were indexed without error.")
     error_message: str | None = Field(
         default=None,

@@ -13,6 +13,7 @@ Graceful degradation philosophy:
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from app.ingestion.chunker import chunk_document
@@ -58,6 +59,7 @@ class DocumentPipeline:
         Returns:
             IndexingResult with counts and success status.
         """
+        start = time.perf_counter()
         logger.info("Processing document", filename=filename, file_type=file_type)
 
         # ── Step 0: Build metadata ─────────────────────────────────────────────
@@ -81,6 +83,7 @@ class DocumentPipeline:
                 parent_chunks_count=0,
                 child_chunks_count=0,
                 total_chunks=0,
+                processing_time_ms=int((time.perf_counter() - start) * 1000),
                 success=False,
                 error_message="Document parsing produced empty text",
             )
@@ -112,6 +115,7 @@ class DocumentPipeline:
                 parent_chunks_count=0,
                 child_chunks_count=0,
                 total_chunks=0,
+                processing_time_ms=int((time.perf_counter() - start) * 1000),
                 success=False,
                 error_message=f"Indexing failed: {exc}",
             )
@@ -123,6 +127,7 @@ class DocumentPipeline:
             parent_chunks_count=parent_count,
             child_chunks_count=child_count,
             total_chunks=len(chunks),
+            processing_time_ms=int((time.perf_counter() - start) * 1000),
             success=success,
             error_message=None if success else f"{failed_count} chunks failed to index",
         )
