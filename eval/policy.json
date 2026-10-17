@@ -1,0 +1,7 @@
+{
+  "recall_at_5": 1.0,
+  "mrr_at_5": 1.0,
+  "ndcg_at_5": 1.0,
+  "answer_contract_passed": 1.0,
+  "abstention_correct": 1.0
+}
