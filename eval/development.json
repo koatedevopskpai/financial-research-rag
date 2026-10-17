@@ -1,0 +1,82 @@
+{
+  "scope": "self-authored-development-fixture",
+  "notice": "Invented companies and figures; not extracted SEC facts or a benchmark.",
+  "documents": {
+    "nimbus-revenue": "Nimbus revenue was 42 million pounds.",
+    "nimbus-cash": "Nimbus cash was 13 million pounds.",
+    "cedar-revenue": "Cedar revenue was 61 million pounds.",
+    "cedar-cash": "Cedar cash was 18 million pounds.",
+    "birch-revenue": "Birch revenue was 29 million pounds.",
+    "birch-cash": "Birch cash was 7 million pounds.",
+    "maple-revenue": "Maple revenue was 83 million pounds.",
+    "maple-cash": "Maple cash was 21 million pounds."
+  },
+  "cases": [
+    {
+      "id": "nimbus-revenue",
+      "question": "What was Nimbus revenue?",
+      "relevance": {
+        "nimbus-revenue": 2
+      }
+    },
+    {
+      "id": "nimbus-cash",
+      "question": "What was Nimbus cash?",
+      "relevance": {
+        "nimbus-cash": 2
+      }
+    },
+    {
+      "id": "cedar-revenue",
+      "question": "What was Cedar revenue?",
+      "relevance": {
+        "cedar-revenue": 2
+      }
+    },
+    {
+      "id": "cedar-cash",
+      "question": "What was Cedar cash?",
+      "relevance": {
+        "cedar-cash": 2
+      }
+    },
+    {
+      "id": "birch-revenue",
+      "question": "What was Birch revenue?",
+      "relevance": {
+        "birch-revenue": 2
+      }
+    },
+    {
+      "id": "birch-cash",
+      "question": "What was Birch cash?",
+      "relevance": {
+        "birch-cash": 2
+      }
+    },
+    {
+      "id": "maple-revenue",
+      "question": "What was Maple revenue?",
+      "relevance": {
+        "maple-revenue": 2
+      }
+    },
+    {
+      "id": "maple-cash",
+      "question": "What was Maple cash?",
+      "relevance": {
+        "maple-cash": 2
+      }
+    },
+    {
+      "id": "unknown-dividend",
+      "question": "What was Nimbus dividend?",
+      "relevance": {}
+    },
+    {
+      "id": "unknown-headcount",
+      "question": "What was Cedar headcount?",
+      "relevance": {}
+    }
+  ]
+}
