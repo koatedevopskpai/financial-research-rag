@@ -6,12 +6,13 @@ These tests verify the pipeline orchestration logic without requiring Azure cred
 
 from __future__ import annotations
 
-import json
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from azure.search.documents.models import IndexingResult as AzureIndexingResult
 
-from app.models.documents import SourceMetadata, Chunk
+from app.models.documents import Chunk
 from app.models.requests import QueryRequest, QueryResponse
 
 
@@ -19,7 +20,7 @@ class TestDocumentPipeline:
     """Tests for the document ingestion pipeline."""
 
     @pytest.mark.asyncio
-    async def test_process_document_with_empty_text_returns_error(self):
+    async def test_process_document_with_empty_text_returns_error(self) -> None:
         """An empty or unparseable document should return success=False."""
         from app.pipelines.document_pipeline import DocumentPipeline
 
@@ -39,12 +40,17 @@ class TestDocumentPipeline:
         assert "empty text" in (result.error_message or "").lower()
 
     @pytest.mark.asyncio
-    async def test_process_document_happy_path(self, sample_chunks):
+    async def test_process_document_happy_path(self, sample_chunks: list[Chunk]) -> None:
         """A valid document should be chunked, embedded, and indexed successfully."""
         from app.pipelines.document_pipeline import DocumentPipeline
 
         pipeline = DocumentPipeline.__new__(DocumentPipeline)
         pipeline.index_manager = MagicMock()
+        pipeline.index_manager.upload_documents = AsyncMock(
+            return_value=[
+                AzureIndexingResult(key=c.chunk_id, succeeded=True) for c in sample_chunks
+            ]
+        )
         pipeline.embedder = AsyncMock()
         pipeline.embedder.embed.return_value = sample_chunks
         pipeline.search_index = MagicMock()
@@ -55,8 +61,8 @@ class TestDocumentPipeline:
         ):
             result = await pipeline.process_document(
                 contents=b"Some text.",
-                filename="test.pdf",
-                file_type="pdf",
+                filename="test.txt",
+                file_type="txt",
             )
 
         assert result.success is True
@@ -67,7 +73,9 @@ class TestQueryPipeline:
     """Tests for the query pipeline."""
 
     @pytest.mark.asyncio
-    async def test_query_returns_response(self, mock_search_client, mock_search_results):
+    async def test_query_returns_response(
+        self, mock_search_client: MagicMock, mock_search_results: list[dict[str, Any]]
+    ) -> None:
         """A query should return a QueryResponse with sources."""
         from app.pipelines.query_pipeline import QueryPipeline
 
@@ -94,7 +102,9 @@ class TestQueryPipeline:
         assert "revenue" in response.answer.lower()
 
     @pytest.mark.asyncio
-    async def test_query_with_no_results_returns_empty_response(self, mock_search_client):
+    async def test_query_with_no_results_returns_empty_response(
+        self, mock_search_client: MagicMock
+    ) -> None:
         """When no documents match, return an appropriate message."""
         from app.pipelines.query_pipeline import QueryPipeline
 

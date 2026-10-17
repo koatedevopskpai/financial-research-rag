@@ -19,14 +19,14 @@ Graceful degradation:
 
 from __future__ import annotations
 
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from azure.search.documents import SearchClient
 
 from app.generation.rag_chain import RAGChain
-from app.models.requests import QueryRequest, QueryResponse, ChunkResult
-from app.retrieval.search import HybridSearchService
+from app.models.requests import QueryRequest, QueryResponse
 from app.retrieval.reranker import RerankerService
+from app.retrieval.search import HybridSearchService
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -72,6 +72,8 @@ class QueryPipeline:
         )
 
         if not reranked:
+            reranked = results
+        if not reranked:
             return QueryResponse(
                 answer="No relevant documents found for your query.",
                 sources=[],
@@ -91,7 +93,7 @@ class QueryPipeline:
         response.total_sources_retrieved = total_retrieved
         return response
 
-    async def stream_query(self, request: QueryRequest) -> AsyncIterator[dict]:
+    async def stream_query(self, request: QueryRequest) -> AsyncIterator[dict[str, str]]:
         """
         Process a single query and stream the response token-by-token via SSE.
 
@@ -111,9 +113,14 @@ class QueryPipeline:
         )
 
         if not reranked:
+            reranked = results
+        if not reranked:
             yield {
                 "event": "done",
-                "data": '{"answer": "No relevant documents found.", "sources": [], "total_sources_retrieved": 0}',
+                "data": (
+                    '{"answer": "No relevant documents found.", "sources": '
+                    '[], "total_sources_retrieved": 0}'
+                ),
             }
             return
 
@@ -130,9 +137,14 @@ class QueryPipeline:
 
         Returns None if embedding is unavailable (degraded mode).
         """
+        from app.config import settings
+
+        if not settings.azure_openai_endpoint:
+            return None
         try:
+            from azure.identity import DefaultAzureCredential, get_bearer_token_provider
             from openai import AsyncAzureOpenAI
-            from azure.identity import DefaultAzureCredential
+
             from app.config import settings
 
             credential = DefaultAzureCredential(
@@ -141,8 +153,8 @@ class QueryPipeline:
             client = AsyncAzureOpenAI(
                 azure_endpoint=settings.azure_openai_endpoint,
                 api_version=settings.azure_openai_api_version,
-                azure_ad_token_provider=credential.get_token(
-                    "https://cognitiveservices.azure.com/.default"
+                azure_ad_token_provider=get_bearer_token_provider(
+                    credential, "https://cognitiveservices.azure.com/.default"
                 ),
             )
             response = await client.embeddings.create(
@@ -151,5 +163,7 @@ class QueryPipeline:
             )
             return response.data[0].embedding
         except Exception as exc:
-            logger.warning("Query embedding failed — falling back to keyword search", error=str(exc))
+            logger.warning(
+                "Query embedding failed — falling back to keyword search", error=str(exc)
+            )
             return None

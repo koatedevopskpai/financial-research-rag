@@ -8,9 +8,9 @@ but internally convert to SourceMetadata + Chunk).
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
-
 from pydantic import BaseModel, Field
+
+from app.models.documents import IndexingResult
 
 
 class QueryRequest(BaseModel):
@@ -34,7 +34,9 @@ class QueryRequest(BaseModel):
     )
     stream: bool = Field(
         default=True,
-        description="If true, response is streamed via SSE. If false, returns a single JSON response.",
+        description=(
+            "If true, response is streamed via SSE. If false, returns a single JSON response."
+        ),
     )
     include_sources: bool = Field(
         default=True,
@@ -42,7 +44,9 @@ class QueryRequest(BaseModel):
     )
     filters: dict[str, str | int | None] | None = Field(
         default=None,
-        description="Optional OData filter conditions, e.g. {'ticker': 'AAPL', 'fiscal_year': 2025}.",
+        description=(
+            "Optional OData filter conditions, e.g. {'ticker': 'AAPL', 'fiscal_year': 2025}."
+        ),
     )
 
 
@@ -96,7 +100,7 @@ class IngestionResponse(BaseModel):
     """
 
     message: str = Field(description="Human-readable status message.")
-    results: list = Field(
+    results: list[IndexingResult] = Field(
         default_factory=list,
         description="List of IndexingResult objects, one per document.",
     )

@@ -3,7 +3,7 @@
 # Stage 2: Runtime — minimal Python 3.11 slim image with only what's needed
 #
 # Design decisions:
-#   - Multi-stage keeps the final image small (~250MB vs 1GB+ for full Python)
+#   - Multi-stage separates build tools from runtime; no measured image-size claim
 #   - pip install --no-cache-dir avoids bloating the image with package caches
 #   - Virtualenv allows the same image to be used for dev (with dev deps) and prod
 
@@ -21,9 +21,13 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy requirements first for Docker layer caching
-COPY requirements.txt .
+COPY requirements-ci.lock .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements-ci.lock
+
+# Prepare the real tokenizer explicitly during build, never at request time.
+COPY app/ ./app/
+RUN python -m app.tokenizer_assets --prepare
 
 # ── Runtime ────────────────────────────────────────────────────────────────
 FROM python:3.11-slim AS runtime
@@ -39,6 +43,8 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy application code
 COPY app/ ./app/
+COPY --from=builder /app/artifacts/tokenizer-cache /app/artifacts/tokenizer-cache
+ENV TIKTOKEN_CACHE_DIR=/app/artifacts/tokenizer-cache
 COPY pyproject.toml .
 
 # Health check

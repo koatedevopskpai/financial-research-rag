@@ -16,11 +16,14 @@ Results are returned unranked — the Semantic Ranker (reranker.py) handles fina
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 from azure.search.documents import SearchClient
 from azure.search.documents.models import (
     QueryType,
-    VectorQuery,
     VectorizedQuery,
+    VectorQuery,
 )
 
 from app.config import settings
@@ -48,8 +51,8 @@ class HybridSearchService:
         query: str,
         query_embedding: list[float] | None,
         top_k: int | None = None,
-        filters: dict[str, str | int | None] | None = None,
-    ) -> list[dict]:
+        filters: Mapping[str, str | int | None] | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Execute a hybrid search against Azure AI Search.
 
@@ -103,7 +106,7 @@ class HybridSearchService:
 
         return list(results)
 
-    def _build_filter_string(self, filters: dict[str, str | int | None]) -> str:
+    def _build_filter_string(self, filters: Mapping[str, str | int | None]) -> str:
         """
         Convert structured filters to OData filter syntax.
 

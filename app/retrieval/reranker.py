@@ -24,6 +24,8 @@ Score threshold rationale:
 
 from __future__ import annotations
 
+from typing import Any
+
 from azure.search.documents import SearchClient
 from azure.search.documents.models import QueryType
 
@@ -52,7 +54,7 @@ class RerankerService:
         query: str,
         top_k: int | None = None,
         min_score: float | None = None,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """
         Execute a semantic reranking pass over the index.
 
@@ -69,7 +71,7 @@ class RerankerService:
             Reranked list of results sorted by @search.reranker_score descending.
         """
         k = top_k or self.top_k
-        threshold = min_score or self.min_score
+        threshold = self.min_score if min_score is None else min_score
 
         results = self.search_client.search(
             search_text=query,
@@ -90,7 +92,7 @@ class RerankerService:
         )
 
         # Filter by reranker score threshold
-        filtered: list[dict] = []
+        filtered: list[dict[str, Any]] = []
         for r in results:
             # Semantic Ranker returns scores in @search.reranker_score
             score = r.get("@search.reranker_score", 0.0)

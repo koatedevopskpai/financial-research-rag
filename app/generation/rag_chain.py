@@ -7,24 +7,24 @@ Design decisions:
      loading spinners.
   2. Degraded mode detection — if Azure OpenAI is unavailable, the chain returns
      an extractive summary (keyword-matching) instead of a generative answer.
-  3. Token budget management — the context window is budgeted explicitly:
-     - 70% for retrieved context (chunks)
-     - 20% for the generated response
-     - 10% for system prompt + formatting overhead
-     This prevents context windows overflow silently.
+  3. Context is assembled from supplied results. A 70/20/10 context-budget policy
+     is not implemented and is not claimed.
 """
 
 from __future__ import annotations
 
 import json
-from typing import AsyncIterator
+import time
+from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
-from openai import AsyncAzureOpenAI
+from openai import AsyncAzureOpenAI, AsyncStream
+from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.config import settings
-from app.generation.prompts import SYSTEM_PROMPT, CONTEXT_TEMPLATE, build_context_from_results
+from app.generation.prompts import CONTEXT_TEMPLATE, SYSTEM_PROMPT, build_context_from_results
 from app.models.requests import ChunkResult, QueryResponse
 from app.utils.logging import get_logger
 
@@ -39,8 +39,10 @@ class RAGChain:
     with the user's query and sends them to the LLM for answer generation.
     """
 
-    def __init__(self):
-        from azure.identity import DefaultAzureCredential
+    def __init__(self) -> None:
+        if not settings.azure_openai_endpoint:
+            raise ValueError("FRR_AZURE_OPENAI_ENDPOINT is required for generation")
+        from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
         credential = DefaultAzureCredential(
             managed_identity_client_id=settings.azure_credential_managed_identity_client_id
@@ -49,15 +51,15 @@ class RAGChain:
         self.client = AsyncAzureOpenAI(
             azure_endpoint=settings.azure_openai_endpoint,
             api_version=settings.azure_openai_api_version,
-            azure_ad_token_provider=credential.get_token(
-                "https://cognitiveservices.azure.com/.default"
+            azure_ad_token_provider=get_bearer_token_provider(
+                credential, "https://cognitiveservices.azure.com/.default"
             ),
         )
         self.deployment_name = settings.azure_openai_deployment_name
         self.temperature = settings.generation_temperature
         self.max_tokens = settings.generation_max_tokens
 
-    async def generate(self, query: str, results: list[dict]) -> QueryResponse:
+    async def generate(self, query: str, results: list[dict[str, Any]]) -> QueryResponse:
         """
         Generate a complete (non-streaming) response.
 
@@ -68,6 +70,8 @@ class RAGChain:
         Returns:
             QueryResponse with answer and source citations.
         """
+        start = time.perf_counter()
+        degraded = False
         context = build_context_from_results(results)
         prompt = CONTEXT_TEMPLATE.format(context=context, query=query)
 
@@ -77,18 +81,20 @@ class RAGChain:
         except Exception as exc:
             logger.warning("LLM generation failed, returning degraded response", error=str(exc))
             answer = self._degraded_response(query, results)
+            degraded = True
 
         sources = self._build_sources(results)
         return QueryResponse(
             answer=answer,
             sources=sources,
             total_sources_retrieved=len(results),
-            degraded_mode="Failed to generate" in answer,
+            degraded_mode=degraded,
+            processing_time_ms=int((time.perf_counter() - start) * 1000),
         )
 
     async def stream_generate(
-        self, query: str, results: list[dict]
-    ) -> AsyncIterator[dict]:
+        self, query: str, results: list[dict[str, Any]]
+    ) -> AsyncIterator[dict[str, str]]:
         """
         Generate a streaming response, yielding tokens as they arrive.
 
@@ -112,19 +118,19 @@ class RAGChain:
             logger.warning("Streaming generation failed", error=str(exc))
             yield {
                 "event": "token",
-                "data": json.dumps(
-                    {"token": self._degraded_response(query, results)}
-                ),
+                "data": json.dumps({"token": self._degraded_response(query, results)}),
             }
 
         # Final metadata frame
         sources = self._build_sources(results)
         yield {
             "event": "done",
-            "data": json.dumps({
-                "sources": [s.model_dump() for s in sources],
-                "total_sources_retrieved": len(results),
-            }),
+            "data": json.dumps(
+                {
+                    "sources": [s.model_dump() for s in sources],
+                    "total_sources_retrieved": len(results),
+                }
+            ),
         }
 
     @retry(
@@ -135,7 +141,7 @@ class RAGChain:
         ),
         reraise=True,
     )
-    async def _call_llm(self, prompt: str):
+    async def _call_llm(self, prompt: str) -> ChatCompletion:
         """Non-streaming LLM call with retry."""
         return await self.client.chat.completions.create(
             model=self.deployment_name,
@@ -155,7 +161,7 @@ class RAGChain:
         ),
         reraise=True,
     )
-    async def _call_llm_stream(self, prompt: str):
+    async def _call_llm_stream(self, prompt: str) -> AsyncStream[ChatCompletionChunk]:
         """Streaming LLM call with retry."""
         return await self.client.chat.completions.create(
             model=self.deployment_name,
@@ -168,7 +174,7 @@ class RAGChain:
             stream=True,
         )
 
-    def _degraded_response(self, query: str, results: list[dict]) -> str:
+    def _degraded_response(self, query: str, results: list[dict[str, Any]]) -> str:
         """
         Fallback response when Azure OpenAI is unavailable.
 
@@ -193,10 +199,13 @@ class RAGChain:
             f"Below are the most relevant passages retrieved from the document index "
             f"for your query: '{query}'\n\n"
             + "\n\n".join(passages)
-            + "\n\n[Note: This is a degraded-mode response. Please retry when the AI service is available.]"
+            + (
+                "\n\n[Note: This is a degraded-mode response. Please "
+                "retry when the AI service is available.]"
+            )
         )
 
-    def _build_sources(self, results: list[dict]) -> list[ChunkResult]:
+    def _build_sources(self, results: list[dict[str, Any]]) -> list[ChunkResult]:
         """Convert raw search results to ChunkResult models for the response."""
         sources: list[ChunkResult] = []
         for r in results:

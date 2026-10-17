@@ -23,20 +23,20 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Iterator, Pattern
+from re import Pattern
 
 import tiktoken
 
 from app.config import settings
 from app.models.documents import Chunk, SourceMetadata
-
+from app.tokenizer_assets import get_tokenizer
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
 # Financial document section headers that should never be split across chunks.
 # Keeping sections intact is critical for financial analysis — splitting "Revenue"
 # from "Revenue Recognition Policies" would confuse the LLM.
-SECTION_HEADERS: Pattern = re.compile(
+SECTION_HEADERS: Pattern[str] = re.compile(
     r"^(#{1,3}\s+)?(?P<header>"
     r"(MANAGEMENT.?S DISCUSSION|FINANCIAL (STATEMENT|HIGHLIGHTS)|"
     r"NOTES TO (THE )?FINANCIAL|REVENUE|COST OF REVENUE|GROSS PROFIT|"
@@ -91,19 +91,13 @@ def detect_boundaries(text: str) -> list[ChunkBoundary]:
         # Only add if not already at a section header boundary
         pos = match.end()
         if not any(b.position == pos for b in boundaries):
-            boundaries.append(
-                ChunkBoundary(position=pos, priority=2, label="paragraph")
-            )
+            boundaries.append(ChunkBoundary(position=pos, priority=2, label="paragraph"))
 
     # Priority 1: Single newlines (sentence-level)
     for match in re.finditer(r"(?<=[.!?])\s+\n", text):
         pos = match.end()
-        if not any(
-            abs(b.position - pos) < 50 for b in boundaries
-        ):
-            boundaries.append(
-                ChunkBoundary(position=pos, priority=1, label="sentence")
-            )
+        if not any(abs(b.position - pos) < 50 for b in boundaries):
+            boundaries.append(ChunkBoundary(position=pos, priority=1, label="sentence"))
 
     # Sort by position ascending — we'll process in document order
     boundaries.sort(key=lambda b: b.position)
@@ -112,7 +106,7 @@ def detect_boundaries(text: str) -> list[ChunkBoundary]:
 
 def split_into_chunks(
     text: str,
-    tokenizer,
+    tokenizer: tiktoken.Encoding,
     max_tokens: int,
     overlap_tokens: int,
     boundaries: list[ChunkBoundary],
@@ -145,16 +139,19 @@ def split_into_chunks(
     while start < len(text):
         # Compute the ideal end position: max_tokens from start, token-counted
         encoded = tokenizer.encode(text[start:])
-        ideal_end_char = _find_char_position(text, start, encoded[:max_tokens])
+        ideal_end_char = _find_char_position(encoded[:max_tokens], tokenizer)
+        if ideal_end_char <= 0:
+            raise ValueError("token budget cannot fit the next Unicode character")
 
         # Find the highest-priority boundary within the window
         chunk_end = start + ideal_end_char
         best_boundary: ChunkBoundary | None = None
 
         for b in boundaries:
-            if start < b.position <= start + ideal_end_char:
-                if best_boundary is None or b.priority >= best_boundary.priority:
-                    best_boundary = b
+            if start < b.position <= start + ideal_end_char and (
+                best_boundary is None or b.priority >= best_boundary.priority
+            ):
+                best_boundary = b
 
         if best_boundary is not None:
             chunk_end = best_boundary.position
@@ -168,32 +165,25 @@ def split_into_chunks(
         # Walk back by overlap_tokens for the next chunk start
         if chunk_end >= len(text):
             break
-        overlap_encoded = tokenizer.encode(text[chunk_end - overlap_tokens * 3:chunk_end])
-        overlap_chars = len(
-            text[chunk_end - overlap_tokens * 3:chunk_end]
-        )  # Approximate
-        start = chunk_end - overlap_chars // 2  # Rough overlap adjustment
+        tokens = tokenizer.encode(text[start:chunk_end])
+        overlap_chars = (
+            len(tokenizer.decode_bytes(tokens[-overlap_tokens:]).decode("utf-8", errors="ignore"))
+            if overlap_tokens
+            else 0
+        )
+        start = max(start + max(1, (chunk_end - start) // 2), chunk_end - overlap_chars)
 
     return spans
 
 
-def _find_char_position(text: str, start: int, tokens: list[int]) -> int:
+def _find_char_position(tokens: list[int], tokenizer: tiktoken.Encoding) -> int:
     """
     Given a list of tokens, find how many characters they span in the original text.
 
-    Tokenizers encode to subword units, so the token-to-character mapping is
-    approximate. We estimate by multiplying average token length (~4 chars) and
-    then refine by checking token count of the resulting substring.
+    Decode the token prefix, dropping only an incomplete trailing UTF-8 character.
+    The caller rejects a budget too small to fit even one complete character.
     """
-    tokenizer = tiktoken.encoding_for_model("gpt-4")
-    estimated_chars = int(len(tokens) * 4)
-    while estimated_chars > 0:
-        substring = text[start:start + estimated_chars]
-        actual_tokens = len(tokenizer.encode(substring))
-        if actual_tokens <= len(tokens):
-            break
-        estimated_chars -= 10
-    return estimated_chars
+    return len(tokenizer.decode_bytes(tokens).decode("utf-8", errors="ignore"))
 
 
 def chunk_document(text: str, metadata: SourceMetadata) -> list[Chunk]:
@@ -210,7 +200,7 @@ def chunk_document(text: str, metadata: SourceMetadata) -> list[Chunk]:
     The Azure AI Search index receives all chunks in a single flat index with
     vector columns for children only (parent chunks are retrieved by ID join).
     """
-    tokenizer = tiktoken.encoding_for_model("gpt-4")
+    tokenizer = get_tokenizer()
     boundaries = detect_boundaries(text)
 
     # Step 1: Parent chunks — large granularity for context

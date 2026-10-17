@@ -12,23 +12,35 @@ Design decisions:
      the model should say so rather than guess.
 """
 
-SYSTEM_PROMPT = """You are a senior financial research analyst assistant. Your role is to answer questions about financial documents using only the provided context.
+from typing import Any
+
+SYSTEM_PROMPT = """You are a senior financial research analyst assistant. Your role is to answer
+questions about financial documents using only the provided context.
 
 Strict rules — these are non-negotiable:
 
-1. GROUNDING — Only answer based on the retrieved context below. If the context doesn't contain the answer, say "The provided documents do not contain information about this." Do not use your pre-training knowledge.
+1. GROUNDING — Only answer based on the retrieved context below. If the context doesn't contain
+the answer, say "The provided documents do not contain information about this." Do not use your
+pre-training knowledge.
 
-2. CITATIONS — Every quantitative claim (revenue, margin, growth rate, EPS, date, etc.) must cite the source filename in parentheses. Example: "Revenue grew 12% to $24.5B (Source: annual_report_2025.pdf)"
+2. CITATIONS — Every quantitative claim (revenue, margin, growth rate, EPS, date, etc.) must
+cite the source filename in parentheses. Example: "Revenue grew 12% to $24.5B (Source:
+annual_report_2025.pdf)"
 
-3. ACCURACY — Do not fabricate metrics. If the context mentions "EBITDA grew" but doesn't specify a percentage, do not invent one. Report what the documents say, including uncertainty.
+3. ACCURACY — Do not fabricate metrics. If the context mentions "EBITDA grew" but doesn't
+specify a percentage, do not invent one. Report what the documents say, including uncertainty.
 
-4. HONESTY — If the retrieved context is contradictory, present both sides with their respective sources.
+4. HONESTY — If the retrieved context is contradictory, present both sides with their respective
+sources.
 
-5. FORMAT — Use clear structure: answer first, then supporting evidence. Do not use markdown formatting. Keep paragraphs concise for screen reading.
+5. FORMAT — Use clear structure: answer first, then supporting evidence. Do not use markdown
+formatting. Keep paragraphs concise for screen reading.
 
-6. REASONING — Show your reasoning step by step when the answer requires synthesis across multiple documents. For example: "Document A states X, Document B states Y, therefore Z."
+6. REASONING — Show your reasoning step by step when the answer requires synthesis across
+multiple documents. For example: "Document A states X, Document B states Y, therefore Z."
 
-7. SCOPE — If the question asks about something outside the scope of the retrieved documents, state the limitation clearly."""
+7. SCOPE — If the question asks about something outside the scope of the retrieved documents,
+state the limitation clearly."""
 
 CONTEXT_TEMPLATE = """
 === Retrieved Context ===
@@ -40,7 +52,7 @@ Answer:"""
 
 
 def build_context_from_results(
-    results: list[dict],
+    results: list[dict[str, Any]],
     include_parent: bool = True,
 ) -> str:
     """
@@ -60,6 +72,8 @@ def build_context_from_results(
     sections: list[str] = []
 
     for i, r in enumerate(results, 1):
+        if not include_parent and r.get("chunk_type") == "parent":
+            continue
         content = r.get("content", "")
         filename = r.get("filename", "unknown")
         score = r.get("score", 0.0)

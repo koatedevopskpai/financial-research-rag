@@ -6,55 +6,59 @@ Uses mocked Azure SearchClient via pytest fixtures (no Azure credentials needed)
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from typing import Any
+from unittest.mock import MagicMock
 
-import pytest
-
-from app.retrieval.search import HybridSearchService
 from app.retrieval.reranker import RerankerService
+from app.retrieval.search import HybridSearchService
 
 
 class TestHybridSearch:
     """Tests for the hybrid search service."""
 
-    def test_search_returns_results(self, mock_search_client, mock_search_results):
+    async def test_search_returns_results(
+        self, mock_search_client: MagicMock, mock_search_results: list[dict[str, Any]]
+    ) -> None:
         """Search should return results from the search client."""
         mock_search_client.search.return_value = mock_search_results
         service = HybridSearchService(mock_search_client)
 
-        results = list(service.search(
+        results = await service.search(
             query="What was Apple's revenue in 2025?",
             query_embedding=[0.1, 0.2, 0.3],
-        ))
+        )
 
         assert len(results) == 2
         assert results[0]["ticker"] == "AAPL"
         mock_search_client.search.assert_called_once()
 
-    def test_search_without_embedding_falls_back_to_keyword(self, mock_search_client):
+    async def test_search_without_embedding_falls_back_to_keyword(
+        self, mock_search_client: MagicMock
+    ) -> None:
         """Without an embedding, search should still work via keyword."""
         mock_search_client.search.return_value = []
         service = HybridSearchService(mock_search_client)
 
-        results = list(service.search(
+        results = await service.search(
             query="EBITDA margin",
             query_embedding=None,
-        ))
+        )
 
         assert results == []
 
-    def test_filter_building(self):
+    def test_filter_building(self) -> None:
         """OData filter strings should be built correctly."""
         from app.retrieval.search import HybridSearchService
+
         service = HybridSearchService(MagicMock())
 
         # Test with ticker + fiscal_year
-        filters = {"ticker": "AAPL", "fiscal_year": 2025}
+        filters: dict[str, str | int | None] = {"ticker": "AAPL", "fiscal_year": 2025}
         result = service._build_filter_string(filters)
         assert "ticker eq 'AAPL'" in result
         assert "fiscal_year eq 2025" in result
 
-    def test_filter_with_string_escaping(self):
+    def test_filter_with_string_escaping(self) -> None:
         """Single quotes in filter values should be escaped."""
         service = HybridSearchService(MagicMock())
         filters = {"ticker": "O'Reilly"}
@@ -65,13 +69,15 @@ class TestHybridSearch:
 class TestReranker:
     """Tests for the reranker service."""
 
-    def test_reranker_filters_by_score_threshold(self, mock_search_client, mock_search_results):
+    async def test_reranker_filters_by_score_threshold(
+        self, mock_search_client: MagicMock, mock_search_results: list[dict[str, Any]]
+    ) -> None:
         """Results below the score threshold should be filtered out."""
         mock_search_client.search.return_value = mock_search_results
         service = RerankerService(mock_search_client)
 
         # Set threshold above the second result's score
-        results = service.rerank(
+        results = await service.rerank(
             query="Apple revenue",
             top_k=5,
             min_score=0.75,
@@ -79,12 +85,14 @@ class TestReranker:
 
         assert len(results) >= 1  # At least the highest-scoring result
 
-    def test_reranker_sorts_by_score_descending(self, mock_search_client, mock_search_results):
+    async def test_reranker_sorts_by_score_descending(
+        self, mock_search_client: MagicMock, mock_search_results: list[dict[str, Any]]
+    ) -> None:
         """Results should be sorted by reranker score descending."""
         mock_search_client.search.return_value = mock_search_results
         service = RerankerService(mock_search_client)
 
-        results = service.rerank(query="Apple revenue", min_score=0.0)
+        results = await service.rerank(query="Apple revenue", min_score=0.0)
 
         scores = [r.get("score", 0) for r in results]
         assert scores == sorted(scores, reverse=True)

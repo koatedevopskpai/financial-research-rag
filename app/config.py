@@ -8,10 +8,9 @@ rather than silently at runtime.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -75,7 +74,9 @@ class Settings(BaseSettings):
     )
     azure_search_api_version: str = Field(
         default="2024-11-01-preview",
-        description="Search API version. Preview is required for Semantic Ranker + vector features.",
+        description=(
+            "Search API version. Preview is required for Semantic Ranker + vector features."
+        ),
     )
     azure_search_semantic_config_name: str = Field(
         default="financial-semantic-config",
@@ -125,7 +126,9 @@ class Settings(BaseSettings):
         default=0.5,
         ge=0.0,
         le=1.0,
-        description="Weight for vector component in hybrid search (0 = BM25-only, 1 = vector-only).",
+        description=(
+            "Weight for vector component in hybrid search (0 = BM25-only, 1 = vector-only)."
+        ),
     )
 
     # ── Generation ─────────────────────────────────────────────────────────────
@@ -161,7 +164,10 @@ class Settings(BaseSettings):
     # For production, deploy a Managed Identity and assign RBAC roles to AOAI + Search.
     azure_credential_managed_identity_client_id: str | None = Field(
         default=None,
-        description="Client ID of the User-Assigned Managed Identity for production. None = DefaultAzureCredential.",
+        description=(
+            "Client ID of the User-Assigned Managed Identity "
+            "for production. None = DefaultAzureCredential."
+        ),
     )
 
     # ── Observability ──────────────────────────────────────────────────────────
@@ -192,7 +198,7 @@ class Settings(BaseSettings):
 
     @field_validator("chunk_size_large")
     @classmethod
-    def large_chunk_must_exceed_small(cls, v: str, info) -> str:
+    def large_chunk_must_exceed_small(cls, v: int, info: ValidationInfo) -> int:
         """Parent chunks must be larger than child chunks — otherwise the hierarchy collapses."""
         small = info.data.get("chunk_size_small", 512)
         if v <= small:

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import Request
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -48,7 +48,9 @@ class RAGError(Exception):
 class DocumentParseError(RAGError):
     """Raised when document parsing fails (unsupported format, corrupted file, etc.)."""
 
-    def __init__(self, message: str = "Failed to parse document", correlation_id: str | None = None):
+    def __init__(
+        self, message: str = "Failed to parse document", correlation_id: str | None = None
+    ):
         super().__init__(
             message=message,
             status_code=400,
@@ -60,7 +62,9 @@ class DocumentParseError(RAGError):
 class EmbeddingError(RAGError):
     """Raised when embedding generation fails and no fallback is available."""
 
-    def __init__(self, message: str = "Embedding service unavailable", correlation_id: str | None = None):
+    def __init__(
+        self, message: str = "Embedding service unavailable", correlation_id: str | None = None
+    ):
         super().__init__(
             message=message,
             status_code=503,
@@ -72,7 +76,9 @@ class EmbeddingError(RAGError):
 class SearchIndexError(RAGError):
     """Raised when Azure AI Search is unreachable or returns an error."""
 
-    def __init__(self, message: str = "Search index unavailable", correlation_id: str | None = None):
+    def __init__(
+        self, message: str = "Search index unavailable", correlation_id: str | None = None
+    ):
         super().__init__(
             message=message,
             status_code=503,
@@ -84,7 +90,9 @@ class SearchIndexError(RAGError):
 class LLMGenerationError(RAGError):
     """Raised when the LLM generation step fails."""
 
-    def __init__(self, message: str = "LLM generation service unavailable", correlation_id: str | None = None):
+    def __init__(
+        self, message: str = "LLM generation service unavailable", correlation_id: str | None = None
+    ):
         super().__init__(
             message=message,
             status_code=503,
@@ -96,8 +104,10 @@ class LLMGenerationError(RAGError):
 # ── FastAPI Exception Handlers ──────────────────────────────────────────────
 
 
-async def rag_error_handler(request: Request, exc: RAGError) -> JSONResponse:
+async def rag_error_handler(_request: Request, exc: Exception) -> JSONResponse:
     """Handle custom RAGError exceptions."""
+    if not isinstance(exc, RAGError):
+        raise TypeError("Unexpected exception for registered handler")
     logger.warning(
         "RAGError handled",
         error_code=exc.error_code,
@@ -116,8 +126,10 @@ async def rag_error_handler(request: Request, exc: RAGError) -> JSONResponse:
     )
 
 
-async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+async def validation_error_handler(_request: Request, exc: Exception) -> JSONResponse:
     """Handle Pydantic validation errors — return 400 with field-level details."""
+    if not isinstance(exc, RequestValidationError):
+        raise TypeError("Unexpected exception for registered handler")
     correlation_id = str(uuid.uuid4())
     errors = exc.errors()
     detail = "; ".join(f"{e['loc']}: {e['msg']}" for e in errors)
@@ -138,7 +150,7 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
     )
 
 
-async def generic_error_handler(request: Request, exc: Exception) -> JSONResponse:
+async def generic_error_handler(_request: Request, exc: Exception) -> JSONResponse:
     """Catch-all for unexpected errors — returns 500 without leaking details."""
     correlation_id = str(uuid.uuid4())
     logger.error(
@@ -158,7 +170,7 @@ async def generic_error_handler(request: Request, exc: Exception) -> JSONRespons
     )
 
 
-def register_error_handlers(app):
+def register_error_handlers(app: FastAPI) -> None:
     """Register all error handlers with a FastAPI application."""
     app.add_exception_handler(RAGError, rag_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
