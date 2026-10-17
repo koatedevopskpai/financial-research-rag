@@ -1,11 +1,11 @@
 [build-system]
 requires = ["setuptools>=68.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "financial-research-rag"
 version = "0.1.0"
-description = "Production-grade RAG system for financial investment research — Azure AI Search + Azure OpenAI + FastAPI"
+description = "Experimental reference RAG system for financial investment research — Azure AI Search + Azure OpenAI + FastAPI"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.111.0",
@@ -62,3 +62,6 @@ disallow_any_unimported = false
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
+
+[tool.setuptools.packages.find]
+include = ["app*"]

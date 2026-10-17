@@ -25,7 +25,9 @@ class SourceMetadata(BaseModel):
 
     document_id: str = Field(
         default_factory=lambda: str(uuid4()),
-        description="Unique identifier for the source document — used as the partition key in AI Search.",
+        description=(
+            "Unique identifier for the source document — used as the partition key in AI Search."
+        ),
     )
     filename: str = Field(description="Original filename including extension.")
     file_type: Literal["pdf", "docx", "xlsx", "txt", "html"] = Field(
@@ -94,7 +96,10 @@ class Chunk(BaseModel):
     )
     embedding: list[float] | None = Field(
         default=None,
-        description="Vector embedding of this chunk — populated by the embedder service. None before indexing.",
+        description=(
+            "Vector embedding of this chunk — populated by "
+            "the embedder service. None before indexing."
+        ),
     )
     embedding_dimensions: int | None = Field(
         default=None,
@@ -105,8 +110,12 @@ class Chunk(BaseModel):
     # ── Denormalised source metadata (copied from SourceMetadata for search efficiency) ──
     document_id: str = Field(description="Foreign key — SourceMetadata.document_id.")
     filename: str = Field(description="Denormalised — copied from SourceMetadata for filtering.")
-    ticker: str | None = Field(default=None, description="Denormalised — copied from SourceMetadata.")
-    fiscal_year: int | None = Field(default=None, description="Denormalised — copied from SourceMetadata.")
+    ticker: str | None = Field(
+        default=None, description="Denormalised — copied from SourceMetadata."
+    )
+    fiscal_year: int | None = Field(
+        default=None, description="Denormalised — copied from SourceMetadata."
+    )
     document_type: str = Field(
         default="other",
         description="Denormalised — copied from SourceMetadata for filtering.",
@@ -123,6 +132,13 @@ class IndexingResult(BaseModel):
     parent_chunks_count: int = Field(ge=0, description="Number of parent chunks indexed.")
     child_chunks_count: int = Field(ge=0, description="Number of child chunks indexed.")
     total_chunks: int = Field(ge=0, description="Total chunks (parent + child) indexed.")
+    processing_time_ms: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Wall-clock duration of the ingest pipeline. Set by the pipeline; None if unmeasured."
+        ),
+    )
     success: bool = Field(description="True if all chunks were indexed without error.")
     error_message: str | None = Field(
         default=None,

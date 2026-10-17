@@ -17,12 +17,13 @@ Design decisions:
 
 from __future__ import annotations
 
-import asyncio
 import time
-from typing import Callable
+from collections.abc import Awaitable, Callable
+from typing import ParamSpec, TypeVar
 
 import httpx
 from openai import AsyncAzureOpenAI
+from openai.types import CreateEmbeddingResponse
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -35,6 +36,8 @@ from app.models.documents import Chunk
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
+P = ParamSpec("P")
+T = TypeVar("T")
 
 
 class CircuitBreaker:
@@ -54,27 +57,30 @@ class CircuitBreaker:
         self,
         failure_threshold: int = 5,
         recovery_timeout: float = 30.0,
-    ):
+    ) -> None:
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.failure_count = 0
         self.last_failure_time: float | None = None
         self.state: str = "CLOSED"  # CLOSED | OPEN | HALF_OPEN
 
-    def call(self, func: Callable, *args, **kwargs):
+    async def call(self, func: Callable[P, Awaitable[T]], *args: P.args, **kwargs: P.kwargs) -> T:
         """Execute func respecting circuit breaker state."""
         if self.state == "OPEN":
             if time.monotonic() - (self.last_failure_time or 0) > self.recovery_timeout:
                 self.state = "HALF_OPEN"
                 logger.info("Circuit breaker: HALF_OPEN — allowing test request")
             else:
+                remaining = self.recovery_timeout - (
+                    time.monotonic() - (self.last_failure_time or 0)
+                )
                 raise CircuitBreakerOpenError(
                     f"Circuit breaker OPEN — {self.failure_count} failures, "
-                    f"retry in {self.recovery_timeout - (time.monotonic() - (self.last_failure_time or 0)):.0f}s"
+                    f"retry in {remaining:.0f}s"
                 )
 
         try:
-            result = func(*args, **kwargs)
+            result = await func(*args, **kwargs)
             # Success — reset breaker
             self.failure_count = 0
             self.state = "CLOSED"
@@ -104,10 +110,12 @@ class EmbeddingService:
         chunks = embedder.embed(chunks)  # Modifies chunks in-place
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
+        if not settings.azure_openai_endpoint:
+            raise ValueError("FRR_AZURE_OPENAI_ENDPOINT is required for embedding")
         # Use Azure AD auth (DefaultAzureCredential) by default.
         # Falls through from Managed Identity → Azure CLI → environment variables.
-        from azure.identity import DefaultAzureCredential
+        from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
         credential = DefaultAzureCredential(
             managed_identity_client_id=settings.azure_credential_managed_identity_client_id
@@ -116,8 +124,8 @@ class EmbeddingService:
         self.client = AsyncAzureOpenAI(
             azure_endpoint=settings.azure_openai_endpoint,
             api_version=settings.azure_openai_api_version,
-            azure_ad_token_provider=credential.get_token(
-                "https://cognitiveservices.azure.com/.default"
+            azure_ad_token_provider=get_bearer_token_provider(
+                credential, "https://cognitiveservices.azure.com/.default"
             ),
         )
         self.embedding_model = settings.azure_openai_embedding_deployment_name
@@ -139,7 +147,7 @@ class EmbeddingService:
 
         # Process in batches
         for i in range(0, len(to_embed), self.max_batch_size):
-            batch = to_embed[i:i + self.max_batch_size]
+            batch = to_embed[i : i + self.max_batch_size]
             texts = [c.content for c in batch]
 
             try:
@@ -179,16 +187,12 @@ class EmbeddingService:
         The retry decorator handles transient failures (HTTP 429, 5xx).
         The circuit breaker handles sustained failures (repeated 429s, network down).
         """
-        def _do_request():
-            # The actual async call is wrapped in sync for tenacity compatibility.
-            # We use asyncio.run inside the sync wrapper.
-            import asyncio
-            return asyncio.run(
-                self.client.embeddings.create(
-                    model=self.embedding_model,
-                    input=texts,
-                )
+
+        async def _do_request() -> CreateEmbeddingResponse:
+            return await self.client.embeddings.create(
+                model=self.embedding_model,
+                input=texts,
             )
 
-        response = self.circuit_breaker.call(_do_request)
+        response = await self.circuit_breaker.call(_do_request)
         return [d.embedding for d in response.data]

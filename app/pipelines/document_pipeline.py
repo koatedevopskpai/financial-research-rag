@@ -13,12 +13,13 @@ Graceful degradation philosophy:
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from app.ingestion.chunker import chunk_document
 from app.ingestion.embedder import EmbeddingService
 from app.ingestion.indexer import SearchIndexManager
-from app.models.documents import SourceMetadata, Chunk, IndexingResult
+from app.models.documents import IndexingResult, SourceMetadata
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -33,7 +34,7 @@ class DocumentPipeline:
         result = await pipeline.process_document(contents, filename, "pdf")
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.index_manager = SearchIndexManager()
         self.embedder = EmbeddingService()
         self.search_index = self.index_manager.get_search_client()
@@ -58,12 +59,19 @@ class DocumentPipeline:
         Returns:
             IndexingResult with counts and success status.
         """
+        start = time.perf_counter()
         logger.info("Processing document", filename=filename, file_type=file_type)
 
         # ── Step 0: Build metadata ─────────────────────────────────────────────
+        from typing import Literal, cast
+
+        supported = {"txt", "html"}
+        if file_type not in supported:
+            raise ValueError("Only txt/html parsing is implemented; other formats are unsupported")
+        validated_file_type = cast(Literal["txt", "html"], file_type)
         metadata = SourceMetadata(
             filename=filename,
-            file_type=file_type,  # type: ignore[arg-type]
+            file_type=validated_file_type,
         )
         if metadata_overrides:
             for key, value in metadata_overrides.items():
@@ -81,6 +89,7 @@ class DocumentPipeline:
                 parent_chunks_count=0,
                 child_chunks_count=0,
                 total_chunks=0,
+                processing_time_ms=int((time.perf_counter() - start) * 1000),
                 success=False,
                 error_message="Document parsing produced empty text",
             )
@@ -102,8 +111,8 @@ class DocumentPipeline:
         # ── Step 4: Index ───────────────────────────────────────────────────────
         try:
             result = await self.index_manager.upload_documents(chunks)
-            success_count = sum(1 for r in result.results if r.succeeded)
-            failed_count = len(result.results) - success_count
+            success_count = sum(1 for r in result if r.succeeded)
+            failed_count = len(result) - success_count
         except Exception as exc:
             logger.error("Indexing failed", filename=filename, error=str(exc))
             return IndexingResult(
@@ -112,6 +121,7 @@ class DocumentPipeline:
                 parent_chunks_count=0,
                 child_chunks_count=0,
                 total_chunks=0,
+                processing_time_ms=int((time.perf_counter() - start) * 1000),
                 success=False,
                 error_message=f"Indexing failed: {exc}",
             )
@@ -123,6 +133,7 @@ class DocumentPipeline:
             parent_chunks_count=parent_count,
             child_chunks_count=child_count,
             total_chunks=len(chunks),
+            processing_time_ms=int((time.perf_counter() - start) * 1000),
             success=success,
             error_message=None if success else f"{failed_count} chunks failed to index",
         )
@@ -148,18 +159,10 @@ class DocumentPipeline:
         if file_type == "html":
             text = contents.decode("utf-8", errors="replace")
             import re
+
             # Strip HTML tags (basic — use BeautifulSoup in production)
             text = re.sub(r"<[^>]+>", " ", text)
             text = re.sub(r"\s+", " ", text).strip()
             return text
 
-        if file_type in ("pdf", "docx", "xlsx"):
-            # In production: call Azure Document Intelligence
-            # For now, return a placeholder so the pipeline can be demonstrated
-            return (
-                f"[{file_type.upper()} document: {len(contents)} bytes]\n\n"
-                "Azure Document Intelligence integration required for full text extraction. "
-                "This placeholder demonstrates the pipeline flow."
-            )
-
-        return ""
+        raise ValueError("Only txt/html parsing is implemented; binary formats are unsupported")

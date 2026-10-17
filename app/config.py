@@ -8,10 +8,9 @@ rather than silently at runtime.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,7 +35,11 @@ class Settings(BaseSettings):
     # We require separate deployment names because a single AOAI resource can host
     # multiple model deployments (gpt-4o, text-embedding-ada-002, etc.).
     azure_openai_endpoint: str = Field(
-        description="https://<your-resource>.openai.azure.com/",
+        default="",
+        description=(
+            "https://<your-resource>.openai.azure.com/ — empty means Azure OpenAI is not "
+            "configured, and the pipeline degrades to keyword-only retrieval."
+        ),
     )
     azure_openai_api_version: str = Field(
         default="2025-01-01-preview",
@@ -59,7 +62,11 @@ class Settings(BaseSettings):
 
     # ── Azure AI Search ────────────────────────────────────────────────────────
     azure_search_endpoint: str = Field(
-        description="https://<your-service>.search.windows.net",
+        default="",
+        description=(
+            "https://<your-service>.search.windows.net — empty means Azure AI Search is not "
+            "configured."
+        ),
     )
     azure_search_index_name: str = Field(
         default="financial-documents",
@@ -67,7 +74,9 @@ class Settings(BaseSettings):
     )
     azure_search_api_version: str = Field(
         default="2024-11-01-preview",
-        description="Search API version. Preview is required for Semantic Ranker + vector features.",
+        description=(
+            "Search API version. Preview is required for Semantic Ranker + vector features."
+        ),
     )
     azure_search_semantic_config_name: str = Field(
         default="financial-semantic-config",
@@ -117,7 +126,9 @@ class Settings(BaseSettings):
         default=0.5,
         ge=0.0,
         le=1.0,
-        description="Weight for vector component in hybrid search (0 = BM25-only, 1 = vector-only).",
+        description=(
+            "Weight for vector component in hybrid search (0 = BM25-only, 1 = vector-only)."
+        ),
     )
 
     # ── Generation ─────────────────────────────────────────────────────────────
@@ -153,7 +164,10 @@ class Settings(BaseSettings):
     # For production, deploy a Managed Identity and assign RBAC roles to AOAI + Search.
     azure_credential_managed_identity_client_id: str | None = Field(
         default=None,
-        description="Client ID of the User-Assigned Managed Identity for production. None = DefaultAzureCredential.",
+        description=(
+            "Client ID of the User-Assigned Managed Identity "
+            "for production. None = DefaultAzureCredential."
+        ),
     )
 
     # ── Observability ──────────────────────────────────────────────────────────
@@ -171,6 +185,12 @@ class Settings(BaseSettings):
     @classmethod
     def validate_url(cls, v: str) -> str:
         """Ensure endpoints are HTTPS — Azure doesn't serve over plain HTTP."""
+        if not v:
+            # An unset endpoint is allowed. The application must be importable and
+            # testable without Azure credentials, and the test suite runs fully
+            # mocked. Each service validates that its own endpoint is configured on
+            # first use, which is where a missing value can still fail loudly.
+            return v
         if not v.startswith("https://"):
             msg = f"Azure endpoint must use HTTPS: {v}"
             raise ValueError(msg)
@@ -178,7 +198,7 @@ class Settings(BaseSettings):
 
     @field_validator("chunk_size_large")
     @classmethod
-    def large_chunk_must_exceed_small(cls, v: str, info) -> str:
+    def large_chunk_must_exceed_small(cls, v: int, info: ValidationInfo) -> int:
         """Parent chunks must be larger than child chunks — otherwise the hierarchy collapses."""
         small = info.data.get("chunk_size_small", 512)
         if v <= small:

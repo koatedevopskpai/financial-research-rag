@@ -40,7 +40,9 @@ def setup_logging() -> None:
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             structlog.processors.UnicodeDecoder(),
-            structlog.dev.ConsoleRenderer() if sys.stderr.isatty() else structlog.processors.JSONRenderer(),
+            structlog.dev.ConsoleRenderer()
+            if sys.stderr.isatty()
+            else structlog.processors.JSONRenderer(),
         ],
         wrapper_class=structlog.stdlib.BoundLogger,
         context_class=dict,
@@ -63,4 +65,4 @@ def get_logger(name: str) -> structlog.stdlib.BoundLogger:
     Call this at module level to get a logger instance:
         logger = get_logger(__name__)
     """
-    return structlog.get_logger(name)
+    return structlog.stdlib.get_logger(name)

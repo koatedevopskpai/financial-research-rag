@@ -15,15 +15,16 @@ Architecture decision — single FastAPI app, not a microservice split:
 from __future__ import annotations
 
 import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Annotated, Any
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
 
 from app.config import settings
-from app.models.requests import QueryRequest, IngestionResponse, ErrorResponse
+from app.models.requests import ErrorResponse, IngestionResponse, QueryRequest, QueryResponse
 from app.pipelines.document_pipeline import DocumentPipeline
 from app.pipelines.query_pipeline import QueryPipeline
 from app.utils.logging import get_logger
@@ -39,7 +40,7 @@ query_pipeline: QueryPipeline | None = None
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """
     FastAPI lifespan handler — replaces the deprecated on_event("startup") / on_event("shutdown").
 
@@ -71,7 +72,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Financial Research RAG",
     version="0.1.0",
-    description="Production-grade RAG system for financial investment research. "
+    description="Experimental reference RAG system for financial investment research. "
     "Ingest documents and ask natural-language questions against them.",
     lifespan=lifespan,
 )
@@ -91,7 +92,7 @@ app.add_middleware(
 
 
 @app.get("/health", tags=["System"])
-async def health_check():
+async def health_check() -> dict[str, Any]:
     """
     Kubernetes liveness/readiness probe.
 
@@ -99,7 +100,9 @@ async def health_check():
     if Azure connectivity is permanently lost.
     """
     return {
-        "status": "ok",
+        "status": "ok"
+        if document_pipeline is not None and query_pipeline is not None
+        else "degraded",
         "document_pipeline_ready": document_pipeline is not None,
         "query_pipeline_ready": query_pipeline is not None,
     }
@@ -114,11 +117,11 @@ async def health_check():
     response_model=IngestionResponse,
     responses={400: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
 )
-async def ingest_document(file: UploadFile = File(...)):
+async def ingest_document(file: Annotated[UploadFile, File(...)]) -> IngestionResponse:
     """
     Upload a financial document for chunking, embedding, and indexing.
 
-    Supported file types: PDF, DOCX, XLSX, TXT, HTML
+    Supported file types: TXT and HTML. Binary document parsers are unimplemented.
     Max file size: determined by infrastructure (configure via reverse proxy / API gateway).
 
     The ingestion pipeline:
@@ -127,7 +130,7 @@ async def ingest_document(file: UploadFile = File(...)):
       3. Generates embeddings via Azure OpenAI
       4. Pushes chunks + embeddings to Azure AI Search
 
-    Returns immediately with indexing results — documents are searchable within seconds.
+    Returns the pipeline result; remote index visibility and latency are not guaranteed.
     """
     if document_pipeline is None:
         raise HTTPException(
@@ -138,7 +141,7 @@ async def ingest_document(file: UploadFile = File(...)):
     start = time.monotonic()
 
     # Validate file type before processing
-    allowed_types = {"pdf", "docx", "xlsx", "txt", "html"}
+    allowed_types = {"txt", "html"}
     ext = file.filename.split(".")[-1].lower() if file.filename else ""
     if ext not in allowed_types:
         raise HTTPException(
@@ -149,20 +152,29 @@ async def ingest_document(file: UploadFile = File(...)):
     contents = await file.read()
     result = await document_pipeline.process_document(
         contents=contents,
-        filename=file.filename,
+        filename=file.filename or "upload",
         file_type=ext,
     )
 
-    elapsed = int((time.monotonic() - start) * 1000)
-    result.processing_time_ms = elapsed
+    elapsed_ms = result.processing_time_ms or int((time.monotonic() - start) * 1000)
 
     logger.info(
         "Document ingested",
-        filename=file.filename,
-        chunks=result.total_chunks_indexed,
-        elapsed_ms=elapsed,
+        filename=file.filename or "upload",
+        chunks=result.total_chunks,
+        elapsed_ms=elapsed_ms,
     )
-    return result
+    return IngestionResponse(
+        message=(
+            "Document indexed successfully"
+            if result.success
+            else f"Ingestion failed: {result.error_message}"
+        ),
+        results=[result],
+        total_documents=1,
+        total_chunks_indexed=result.total_chunks,
+        processing_time_ms=elapsed_ms,
+    )
 
 
 # ── Query ──────────────────────────────────────────────────────────────────────
@@ -170,10 +182,11 @@ async def ingest_document(file: UploadFile = File(...)):
 
 @app.post(
     "/query",
+    response_model=None,
     tags=["Query"],
     responses={503: {"model": ErrorResponse}},
 )
-async def query_documents(request: QueryRequest):
+async def query_documents(request: QueryRequest) -> QueryResponse | EventSourceResponse:
     """
     Ask a question against the indexed documents.
 

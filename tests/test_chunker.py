@@ -20,7 +20,7 @@ from app.models.documents import SourceMetadata
 class TestChunker:
     """Tests for the chunker module."""
 
-    def test_detect_boundaries_detects_section_headers(self):
+    def test_detect_boundaries_detects_section_headers(self) -> None:
         """Section headers should be detected as high-priority boundaries."""
         text = (
             "Some introductory text.\n\n"
@@ -39,7 +39,7 @@ class TestChunker:
         assert any("MANAGEMENT" in b.label for b in section_boundaries)
         assert any("FINANCIAL" in b.label for b in section_boundaries)
 
-    def test_chunk_document_creates_parent_and_child_chunks(self):
+    def test_chunk_document_creates_parent_and_child_chunks(self) -> None:
         """The chunker should create hierarchical parent/child chunks."""
         text = (
             "Apple Inc. reported strong financial results for fiscal year 2025. "
@@ -79,7 +79,7 @@ class TestChunker:
             assert chunk.fiscal_year == 2025
             assert chunk.document_type == "annual_report"
 
-    def test_chunk_content_preserves_text(self):
+    def test_chunk_content_preserves_text(self) -> None:
         """Chunk content should be a valid substring of the original text."""
         text = "Apple reported $395.6B in revenue. Services grew 12%. iPhone sales increased 8%."
         metadata = SourceMetadata(
@@ -91,9 +91,11 @@ class TestChunker:
 
         for chunk in chunks:
             # Each chunk's content should appear somewhere in the original text
-            assert chunk.content in text, f"Chunk content not found in original: {chunk.content[:50]}"
+            assert chunk.content in text, (
+                f"Chunk content not found in original: {chunk.content[:50]}"
+            )
 
-    def test_token_count_is_accurate(self):
+    def test_token_count_is_accurate(self) -> None:
         """Token counts should match tiktoken's encoding."""
         text = "Apple reported $395.6B in revenue."
         metadata = SourceMetadata(filename="report.pdf", file_type="pdf")
@@ -106,7 +108,7 @@ class TestChunker:
             # Allow small tolerance for boundary effects
             assert abs(chunk.token_count - expected_tokens) <= 5
 
-    def test_chunk_order_is_preserved(self):
+    def test_chunk_order_is_preserved(self) -> None:
         """chunk_index values should preserve document order."""
         text = "First paragraph. " * 50 + "Second paragraph. " * 50
         metadata = SourceMetadata(filename="report.pdf", file_type="pdf")
@@ -117,7 +119,7 @@ class TestChunker:
         indices = [c.chunk_index for c in chunks]
         assert indices == sorted(indices)
 
-    def test_empty_text_returns_no_chunks(self):
+    def test_empty_text_returns_no_chunks(self) -> None:
         """Empty text should result in no chunks."""
         metadata = SourceMetadata(filename="report.pdf", file_type="pdf")
         chunks = chunk_document("", metadata)

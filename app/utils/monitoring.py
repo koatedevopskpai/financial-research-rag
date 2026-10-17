@@ -19,7 +19,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 
 from app.config import settings
-from app.utils.logging import setup_logging, get_logger
+from app.utils.logging import get_logger, setup_logging
 
 logger = get_logger(__name__)
 
@@ -34,11 +34,13 @@ def setup_observability() -> None:
     setup_logging()
 
     # Configure OpenTelemetry resource — identifies this service in traces
-    resource = Resource.create({
-        SERVICE_NAME: settings.otel_service_name,
-        "service.version": "0.1.0",
-        "deployment.environment": "production",
-    })
+    resource = Resource.create(
+        {
+            SERVICE_NAME: settings.otel_service_name,
+            "service.version": "0.1.0",
+            "deployment.environment": "reference",
+        }
+    )
 
     # Create tracer provider
     tracer_provider = TracerProvider(resource=resource)
@@ -49,18 +51,14 @@ def setup_observability() -> None:
         otlp_exporter = OTLPSpanExporter(
             endpoint=settings.otel_exporter_otlp_endpoint,
         )
-        tracer_provider.add_span_processor(
-            BatchSpanProcessor(otlp_exporter)
-        )
+        tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
         logger.info(
             "OTLP tracing configured",
             endpoint=settings.otel_exporter_otlp_endpoint,
         )
     else:
         # Development: print spans to console
-        tracer_provider.add_span_processor(
-            BatchSpanProcessor(ConsoleSpanExporter())
-        )
+        tracer_provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
         logger.info("Console tracing configured (no OTLP endpoint)")
 
     # Set the global tracer provider

@@ -15,10 +15,8 @@ Design decisions:
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
-from azure.core.credentials import AzureKeyCredential
 from azure.core.exceptions import ResourceNotFoundError, ServiceRequestError
 from azure.identity import DefaultAzureCredential
 from azure.search.documents import SearchClient
@@ -28,7 +26,6 @@ from azure.search.documents.indexes.models import (
     HnswParameters,
     SearchableField,
     SearchField,
-    SearchFieldDataType,
     SearchIndex,
     SemanticConfiguration,
     SemanticField,
@@ -36,10 +33,9 @@ from azure.search.documents.indexes.models import (
     SemanticSearch,
     SimpleField,
     VectorSearch,
-    VectorSearchAlgorithmKind,
     VectorSearchProfile,
 )
-from azure.search.documents.models import IndexDocumentsResult
+from azure.search.documents.models import IndexingResult as AzureIndexingResult
 
 from app.config import settings
 from app.models.documents import Chunk
@@ -52,81 +48,74 @@ logger = get_logger(__name__)
 # Every field maps 1:1 to a Pydantic model field in documents.py.
 # Changing the schema requires a delete-recreate or an additive migration.
 
-INDEX_FIELDS: list[SearchField | SearchableField | SimpleField] = [
+INDEX_FIELDS: list[SearchField] = [
     SimpleField(
         name="chunk_id",
-        type=SearchFieldDataType.String,
+        type="Edm.String",
         key=True,  # Primary key for AI Search
         filterable=True,
         sortable=True,
     ),
     SimpleField(
         name="parent_chunk_id",
-        type=SearchFieldDataType.String,
+        type="Edm.String",
         filterable=True,
-        description="Links child chunks to their parent for context retrieval.",
     ),
     SimpleField(
         name="chunk_type",
-        type=SearchFieldDataType.String,
+        type="Edm.String",
         filterable=True,
-        description="'parent' or 'child'.",
     ),
     SearchableField(
         name="content",
-        type=SearchFieldDataType.String,
+        type="Edm.String",
         searchable=True,  # Full-text search on chunk content
         analyzer_name="en.microsoft",  # Microsoft's English analyzer — handles financial terms well
-        description="The chunk text content — searched by both vector and keyword.",
     ),
     SimpleField(
         name="token_count",
-        type=SearchFieldDataType.Int32,
+        type="Edm.Int32",
         filterable=True,
         sortable=True,
     ),
     SimpleField(
         name="chunk_index",
-        type=SearchFieldDataType.Int32,
+        type="Edm.Int32",
         filterable=True,
         sortable=True,
     ),
     SearchField(
         name="embedding",
-        type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
+        type="Collection(Edm.Single)",
         searchable=True,  # Vector search
         vector_search_dimensions=1536,  # Ada-002 outputs 1536-dim vectors
         vector_search_profile_name="financial-vector-profile",
-        description="Vector embedding of the chunk content.",
     ),
     SimpleField(
         name="document_id",
-        type=SearchFieldDataType.String,
+        type="Edm.String",
         filterable=True,
-        description="Foreign key to the source document.",
     ),
     SimpleField(
         name="filename",
-        type=SearchFieldDataType.String,
+        type="Edm.String",
         filterable=True,
         sortable=True,
     ),
     SimpleField(
         name="ticker",
-        type=SearchFieldDataType.String,
+        type="Edm.String",
         filterable=True,
-        description="Stock ticker for filtering by company.",
     ),
     SimpleField(
         name="fiscal_year",
-        type=SearchFieldDataType.Int32,
+        type="Edm.Int32",
         filterable=True,
         sortable=True,
-        description="Fiscal year for time-filtered queries.",
     ),
     SimpleField(
         name="document_type",
-        type=SearchFieldDataType.String,
+        type="Edm.String",
         filterable=True,
     ),
 ]
@@ -141,7 +130,9 @@ class SearchIndexManager:
     and an indexer for upload operations.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
+        if not settings.azure_search_endpoint:
+            raise ValueError("FRR_AZURE_SEARCH_ENDPOINT is required for indexing")
         self.credential = DefaultAzureCredential(
             managed_identity_client_id=settings.azure_credential_managed_identity_client_id
         )
@@ -163,7 +154,7 @@ class SearchIndexManager:
         index_name = settings.azure_search_index_name
 
         try:
-            existing = self.index_client.get_index(index_name)
+            self.index_client.get_index(index_name)
             logger.info("Search index already exists", index=index_name)
             return
         except (ResourceNotFoundError, ServiceRequestError):
@@ -176,10 +167,9 @@ class SearchIndexManager:
                 algorithms=[
                     HnswAlgorithmConfiguration(
                         name="financial-hnsw-config",
-                        kind=VectorSearchAlgorithmKind.HNSW,
                         parameters=HnswParameters(
-                            m=16,  # Number of bi-directional links (higher = more accurate, more memory)
-                            ef_construction=400,  # Dynamic range for index building (higher = more accurate, slower build)
+                            m=16,
+                            ef_construction=400,
                             metric="cosine",
                         ),
                     )
@@ -209,7 +199,7 @@ class SearchIndexManager:
             logger.info("Search index created successfully", index=index_name)
         except Exception as exc:
             # 409 Conflict means the index already exists — not an error at startup.
-            if hasattr(exc, "status_code") and exc.status_code == 409:  # type: ignore[union-attr]
+            if getattr(exc, "status_code", None) == 409:
                 logger.info("Search index already exists (409)", index=index_name)
             else:
                 logger.warning(
@@ -234,14 +224,14 @@ class SearchIndexManager:
         We exclude None values (especially embedding=None for failed embeddings)
         because AI Search rejects null vector fields.
         """
-        d = chunk.model_dump(exclude_none=True)
-        # Ensure embedding is a list, not None
-        if "embedding" not in d or d["embedding"] is None:
-            # Children without embeddings get a zero vector (won't affect hybrid search weighting)
-            d["embedding"] = [0.0] * 1536 if chunk.chunk_type == "child" else None
-        return d
+        allowed = {field.name for field in INDEX_FIELDS}
+        return {
+            key: value
+            for key, value in chunk.model_dump(exclude_none=True).items()
+            if key in allowed
+        }
 
-    async def upload_documents(self, chunks: list[Chunk]) -> IndexDocumentsResult:
+    async def upload_documents(self, chunks: list[Chunk]) -> list[AzureIndexingResult]:
         """
         Upload chunks to Azure AI Search in batches.
 
@@ -249,20 +239,22 @@ class SearchIndexManager:
             chunks: List of Chunk objects to upload.
 
         Returns:
-            IndexDocumentsResult with success/failure counts.
+            List of Azure per-document IndexingResult objects.
         """
         search_client = self.get_search_client()
         documents = [self._chunk_to_dict(c) for c in chunks]
 
         # Azure AI Search batch limit is 1000 documents per request.
         batch_size = 1000
-        total_results = IndexDocumentsResult(results=[])
+        total_results: list[AzureIndexingResult] = []
 
         for i in range(0, len(documents), batch_size):
-            batch = documents[i:i + batch_size]
+            batch = documents[i : i + batch_size]
             try:
                 result = search_client.upload_documents(documents=batch)
-                total_results.results.extend(result)
+                if len(result) != len(batch):
+                    raise ValueError("Azure upload returned an incomplete result set")
+                total_results.extend(result)
                 logger.debug("Batch uploaded", batch_index=i // batch_size, count=len(batch))
             except Exception as exc:
                 logger.error(
@@ -273,7 +265,7 @@ class SearchIndexManager:
                 # Re-raise — the pipeline handles this upstream
                 raise
 
-        success_count = sum(1 for r in total_results.results if r.succeeded)
+        success_count = sum(1 for r in total_results if r.succeeded)
         logger.info(
             "Document upload complete",
             total=len(documents),

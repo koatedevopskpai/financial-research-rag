@@ -38,3 +38,8 @@ coverage.xml
 # OS
 .DS_Store
 Thumbs.db
+
+# Generated reports, token assets and downloaded documents
+artifacts/
+.mypy_cache/
+.ruff_cache/
