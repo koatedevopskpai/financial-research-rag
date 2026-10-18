@@ -2,7 +2,7 @@
 
 ## System Overview
 
-A production-grade Retrieval-Augmented Generation system purpose-built for financial investment research. Ingests financial documents (annual reports, earnings transcripts, analyst notes), indexes them with hybrid search, and answers complex financial queries via natural language.
+An experimental Retrieval-Augmented Generation reference implementation for financial documents. Ingests financial documents (annual reports, earnings transcripts, analyst notes), indexes them with hybrid search, and answers complex financial queries via natural language.
 
 ```
 ┌──────────────┐     ┌──────────────────┐     ┌───────────────┐
