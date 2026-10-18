@@ -1,1 +1,1 @@
-# financial-research-rag: Production-grade RAG for investment research.
+# financial-research-rag: experimental RAG reference implementation for investment research.
